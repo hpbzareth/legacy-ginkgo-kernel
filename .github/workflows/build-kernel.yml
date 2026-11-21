@@ -181,31 +181,23 @@ jobs:
 
           echo "=== Injecting Auto-Perf Tuning Service ==="
           cat << 'EOF' > "$TMP_AK3_DIR/00-legacy-perf.sh"
-#!/system/bin/sh
-# Legacy Ginkgo (4.14.117) Auto-Perf & GPU Turbo Boot Service
-
-# 1. GPU Adreno 610 Max Power & Turbo 950MHz L0
-echo 0 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null
-echo 3 > /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null
-echo 0 > /sys/class/kgsl/kgsl-3d0/throttling 2>/dev/null
-
-# 2. CPU Auto-Perf Schedutil Ramp-Up & WALT
-for pol in /sys/devices/system/cpu/cpufreq/policy*; do
-  echo 500 > $pol/schedutil/up_rate_limit_us 2>/dev/null
-  echo 20000 > $pol/schedutil/down_rate_limit_us 2>/dev/null
-done
-
-# 3. I/O Scheduler & eMMC 5.1 Storage Priority (BFQ + 128KB Read-ahead)
-for blk in /sys/block/mmcblk*; do
-  echo bfq > $blk/queue/scheduler 2>/dev/null
-  echo 128 > $blk/queue/read_ahead_kb 2>/dev/null
-done
-
-# 4. Storage & VM Memory Tuning
-echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null
-echo 20 > /proc/sys/vm/dirty_ratio 2>/dev/null
-echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null
-EOF
+          #!/system/bin/sh
+          # Legacy Ginkgo (4.14.117) Auto-Perf & GPU Turbo Boot Service
+          echo 0 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null
+          echo 3 > /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null
+          echo 0 > /sys/class/kgsl/kgsl-3d0/throttling 2>/dev/null
+          for pol in /sys/devices/system/cpu/cpufreq/policy*; do
+            echo 500 > $pol/schedutil/up_rate_limit_us 2>/dev/null
+            echo 20000 > $pol/schedutil/down_rate_limit_us 2>/dev/null
+          done
+          for blk in /sys/block/mmcblk*; do
+            echo bfq > $blk/queue/scheduler 2>/dev/null
+            echo 128 > $blk/queue/read_ahead_kb 2>/dev/null
+          done
+          echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null
+          echo 20 > /proc/sys/vm/dirty_ratio 2>/dev/null
+          echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null
+          EOF
           chmod 755 "$TMP_AK3_DIR/00-legacy-perf.sh"
 
           if [ -f "$TMP_AK3_DIR/anykernel.sh" ]; then
