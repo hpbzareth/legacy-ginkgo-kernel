@@ -86,7 +86,7 @@ jobs:
             echo "=== Cloning Proton Clang 13 ==="
             git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain/clang
           fi
-          # Remove host x86 assembler binary inside toolchain to prevent accidental execution with arm64 flags
+          # Remove host x86 assembler inside toolchain to prevent accidental execution with arm64 flags
           rm -f toolchain/clang/bin/as || true
 
       - name: Apply Ultra-Optimizations on 4.14.117 Base
@@ -139,23 +139,16 @@ jobs:
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
 
-          # Enable Clang integrated assembler and remove buggy prefix/gcc-toolchain auto-detection
-          sed -i 's/-no-integrated-as/-fintegrated-as/g' Makefile
+          # Correctly append $(CROSS_COMPILE) to --prefix so Clang invokes aarch64-linux-gnu-as
+          sed -i 's/CLANG_FLAGS\t+= --prefix=$(GCC_TOOLCHAIN_DIR)/CLANG_FLAGS\t+= --prefix=$(GCC_TOOLCHAIN_DIR)$(CROSS_COMPILE)/g' Makefile
+
+          # Remove forced --gcc-toolchain to avoid warning that trips -Werror during cc-option check
           sed -i 's/CLANG_FLAGS\t+= --gcc-toolchain=$(GCC_TOOLCHAIN)/# CLANG_FLAGS += --gcc-toolchain=$(GCC_TOOLCHAIN)/g' Makefile
-          sed -i 's/CLANG_FLAGS\t+= --prefix=$(GCC_TOOLCHAIN_DIR)/# CLANG_FLAGS += --prefix=$(GCC_TOOLCHAIN_DIR)/g' Makefile
 
           # Ensure compiler stack protector test does not abort make
           sed -i '/not supported by compiler/s/exit 1/true/' Makefile
 
-          # Patch VDSO Makefile to explicitly use Clang integrated assembler for assembly files (.S)
-          if [ -f arch/arm64/kernel/vdso/Makefile ]; then
-            sed -i 's|cmd_vdsoas = $(CC) $(a_flags) -c|cmd_vdsoas = $(CC) $(a_flags) -fintegrated-as -c|' arch/arm64/kernel/vdso/Makefile
-          fi
-          if [ -f arch/arm64/kernel/vdso32/Makefile ]; then
-            sed -i 's|cmd_vdsoas = $(CC) $(a_flags) -c|cmd_vdsoas = $(CC) $(a_flags) -fintegrated-as -c|' arch/arm64/kernel/vdso32/Makefile
-          fi
-
-          # Fix LLVM integrated assembler macro comma syntax in VDSO gettimeofday.S
+          # Fix VDSO macro syntax
           sed -i 's/clock_gettime_return, shift=1/clock_gettime_return shift=1/g' arch/arm64/kernel/vdso/gettimeofday.S
           sed -i 's/\.macro clock_gettime_return, shift=0/\.macro clock_gettime_return shift=0/g' arch/arm64/kernel/vdso/gettimeofday.S
 
@@ -186,8 +179,7 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             HOSTCFLAGS="-fcommon -Wno-deprecated-declarations -Wno-error" \
-            KCFLAGS="-Wno-error -fintegrated-as" \
-            KAFLAGS="-fintegrated-as" \
+            KCFLAGS="-Wno-error" \
             Image.gz dtbs Image.gz-dtb 2>&1 | tee build.log
 
           echo "=== Ensuring Image.gz-dtb Exists ==="
