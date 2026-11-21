@@ -134,7 +134,11 @@ jobs:
           sed -i 's/CONFIG_CC_STACKPROTECTOR_REGULAR=y/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
-          echo "=== 9. Patch Makefile & DTC for Modern Host / Clang Toolchains ==="
+          echo "=== 9. Disable MODVERSIONS (Fix Linker Dangerous Relocation & Allow Custom Modules) ==="
+          sed -i 's/CONFIG_MODVERSIONS=y/# CONFIG_MODVERSIONS is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_MODVERSIONS=n" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+
+          echo "=== 10. Patch Makefile & DTC for Modern Host / Clang Toolchains ==="
           # Fix dtc yylloc duplicate definition on GCC 10+
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
@@ -156,6 +160,7 @@ jobs:
 
       - name: Build Kernel Image & DTBs
         run: |
+          set -e -o pipefail
           cd kernel
           export PATH="${{ github.workspace }}/toolchain/clang/bin:$PATH"
           export ARCH=arm64
@@ -180,7 +185,7 @@ jobs:
             STRIP=llvm-strip \
             HOSTCFLAGS="-fcommon -Wno-deprecated-declarations -Wno-error" \
             KCFLAGS="-Wno-error" \
-            Image.gz dtbs Image.gz-dtb 2>&1 | tee build.log
+            Image.gz dtbs Image.gz-dtb
 
           echo "=== Ensuring Image.gz-dtb Exists ==="
           if [ ! -f "out/arch/arm64/boot/Image.gz-dtb" ] && [ -f "out/arch/arm64/boot/Image.gz" ]; then
@@ -194,6 +199,13 @@ jobs:
       - name: Package with AnyKernel3
         id: package
         run: |
+          set -e
+          echo "=== Verifying Compiled Kernel Exists ==="
+          if [ ! -f "kernel/out/arch/arm64/boot/Image.gz-dtb" ] && [ ! -f "kernel/out/arch/arm64/boot/Image.gz" ]; then
+            echo "FATAL ERROR: No kernel image was produced by compilation!"
+            exit 1
+          fi
+
           echo "=== Setting up AnyKernel3 ==="
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
           
@@ -202,8 +214,10 @@ jobs:
 
           if [ -f "kernel/out/arch/arm64/boot/Image.gz-dtb" ]; then
             cp -f kernel/out/arch/arm64/boot/Image.gz-dtb "$TMP_AK3_DIR/Image.gz-dtb"
+            echo "Copied Image.gz-dtb ($(stat -c%s kernel/out/arch/arm64/boot/Image.gz-dtb) bytes)"
           elif [ -f "kernel/out/arch/arm64/boot/Image.gz" ]; then
             cp -f kernel/out/arch/arm64/boot/Image.gz "$TMP_AK3_DIR/Image.gz"
+            echo "Copied Image.gz ($(stat -c%s kernel/out/arch/arm64/boot/Image.gz) bytes)"
           fi
 
           if [ -f "kernel/out/arch/arm64/boot/dtbo.img" ]; then
