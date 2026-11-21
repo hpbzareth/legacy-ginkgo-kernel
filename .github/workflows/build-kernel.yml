@@ -107,11 +107,26 @@ jobs:
           echo "CONFIG_DEFAULT_BFQ=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo 'CONFIG_DEFAULT_IOSCHED="bfq"' >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
-          echo "=== 4. ZRAM Memory Compression (LZO-RLE) ==="
+          echo "=== 4. ZRAM Memory Compression (LZ4 + LZO MiTrinket Parity) ==="
+          echo "CONFIG_CRYPTO_LZ4=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_CRYPTO_LZ4HC=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_LZ4_COMPRESS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_LZ4_DECOMPRESS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_CRYPTO_LZO=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_LZO_COMPRESS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_LZO_DECOMPRESS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
-          echo 'CONFIG_ZRAM_DEFAULT_COMP_ALGORITHM="lzo-rle"' >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo 'CONFIG_ZRAM_DEFAULT_COMP_ALGORITHM="lz4"' >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_ZRAM_WRITEBACK=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_KSWAPD_CPU=0xFF" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+
+          echo "=== 4b. Compiler & Memory Subsystem (MiTrinket Parity) ==="
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_OPTIMIZE_INLINING=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_SLUB=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_SLUB_CPU_PARTIAL=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_SCHED_HRTICK=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_SCHEDUTIL_UP_RATE_LIMIT=500" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_SCHEDUTIL_DOWN_RATE_LIMIT=2000" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
           echo "=== 5. Debloat Kernel (Disable Debuggers, Tracing & Overhead) ==="
           sed -i 's/CONFIG_FTRACE=y/CONFIG_FTRACE=n/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
@@ -238,25 +253,8 @@ jobs:
           BUILD_DATE=$(date +"%Y%m%d-%H%M")
           FINAL_ZIP_NAME="Legacy-Ginkgo-4.14.117-PurePerf-${BUILD_DATE}.zip"
 
-          echo "=== Injecting Auto-Perf Tuning Service ==="
-          printf '%s\n' \
-            '#!/system/bin/sh' \
-            '# Legacy Ginkgo (4.14.117) Auto-Perf & GPU Turbo Boot Service' \
-            'echo 0 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null' \
-            'echo 3 > /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null' \
-            'echo 0 > /sys/class/kgsl/kgsl-3d0/throttling 2>/dev/null' \
-            'for pol in /sys/devices/system/cpu/cpufreq/policy*; do' \
-            '  echo 500 > $pol/schedutil/up_rate_limit_us 2>/dev/null' \
-            '  echo 20000 > $pol/schedutil/down_rate_limit_us 2>/dev/null' \
-            'done' \
-            'for blk in /sys/block/mmcblk*; do' \
-            '  echo bfq > $blk/queue/scheduler 2>/dev/null' \
-            '  echo 128 > $blk/queue/read_ahead_kb 2>/dev/null' \
-            'done' \
-            'echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null' \
-            'echo 20 > /proc/sys/vm/dirty_ratio 2>/dev/null' \
-            'echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null' \
-            > "$TMP_AK3_DIR/00-legacy-perf.sh"
+          echo "=== Injecting MiTrinket-Parity Auto-Perf Service ==="
+          cp -f "${{ github.workspace }}/.github/00-legacy-perf.sh" "$TMP_AK3_DIR/00-legacy-perf.sh"
           chmod 755 "$TMP_AK3_DIR/00-legacy-perf.sh"
 
           # Use dedicated Ginkgo SAR anykernel.sh (no ramdisk in boot partition)
