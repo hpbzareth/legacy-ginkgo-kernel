@@ -2,7 +2,7 @@
 ## osm0sis @ xda-developers
 
 properties() { '
-kernel.string=Legacy Ginkgo Kernel 4.14.117 PurePerf (MiTrinket Parity) by Zareth
+kernel.string=Legacy Ginkgo Kernel 4.14.117 (1000Hz UltraGaming + BBR) by Zareth
 do.devicecheck=1
 do.modules=0
 do.systemless=1
@@ -32,12 +32,13 @@ PATCH_VBMETA_FLAG=auto;
 # boot install (System-as-Root / SAR device without boot ramdisk)
 split_boot;
 flash_boot;
-if [ -f $home/dtbo.img ]; then flash_dtbo; fi
-if [ -d /data ]; then
+if [ -f $AKHOME/dtbo.img ]; then flash_dtbo; fi
+if [ -d /data/adb ]; then
   mkdir -p /data/adb/service.d /data/adb/post-fs-data.d 2>/dev/null;
   ui_print "  • Installing MiTrinket-Parity Auto-Perf service...";
-  cp -f $home/00-legacy-perf.sh /data/adb/service.d/00-legacy-perf.sh 2>/dev/null;
-  cp -f $home/00-legacy-perf.sh /data/adb/post-fs-data.d/00-legacy-perf.sh 2>/dev/null;
+  cp -f $AKHOME/00-legacy-perf.sh /data/adb/service.d/00-legacy-perf.sh 2>/dev/null;
+  cp -f $AKHOME/00-legacy-perf.sh /data/adb/post-fs-data.d/00-legacy-perf.sh 2>/dev/null;
   chmod 755 /data/adb/service.d/00-legacy-perf.sh /data/adb/post-fs-data.d/00-legacy-perf.sh 2>/dev/null;
 fi
 ## end boot install
+exit 0;

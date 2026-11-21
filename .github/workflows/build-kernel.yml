@@ -93,14 +93,21 @@ jobs:
         run: |
           cd kernel
           echo "=== 1. Setting up Localversion ==="
-          sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-Legacy-Ginkgo-Zareth"/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-Legacy-PurePerf-1000Hz"/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_LOCALVERSION_AUTO=n" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
-          echo "=== 2. CPU Schedutil 500us & Timer 300Hz Frame-Perfect ==="
+          echo "=== 2. Timer Frequency 1000Hz (1ms Ultra-Low Latency Gaming Timer) ==="
           sed -i 's/CONFIG_HZ_100=y/# CONFIG_HZ_100 is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           sed -i 's/CONFIG_HZ_250=y/# CONFIG_HZ_250 is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
-          echo "CONFIG_HZ_300=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
-          echo "CONFIG_HZ=300" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          sed -i 's/CONFIG_HZ_300=y/# CONFIG_HZ_300 is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_HZ_1000=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_HZ=1000" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+
+          echo "=== 2b. Google TCP BBR Congestion Control & Fair Queueing ==="
+          echo "CONFIG_TCP_CONG_BBR=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo 'CONFIG_DEFAULT_TCP_CONG="bbr"' >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_NET_SCH_FQ=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_NET_SCH_FQ_CODEL=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
           echo "=== 3. Storage I/O Scheduler BFQ & Storage Tuning ==="
           echo "CONFIG_IOSCHED_BFQ=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
@@ -125,8 +132,8 @@ jobs:
           echo "CONFIG_SLUB=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_SLUB_CPU_PARTIAL=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_SCHED_HRTICK=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
-          echo "CONFIG_SCHEDUTIL_UP_RATE_LIMIT=500" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
-          echo "CONFIG_SCHEDUTIL_DOWN_RATE_LIMIT=2000" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_SCHEDUTIL_UP_RATE_LIMIT=0" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_SCHEDUTIL_DOWN_RATE_LIMIT=50000" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
           echo "=== 5. Debloat Kernel (Disable Debuggers, Tracing & Overhead) ==="
           sed -i 's/CONFIG_FTRACE=y/CONFIG_FTRACE=n/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
