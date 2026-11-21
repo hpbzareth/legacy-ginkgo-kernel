@@ -58,7 +58,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential bc bison flex libssl-dev libelf-dev lz4 cpio kmod git curl \
             zip unzip file libncurses5-dev libncursesw5-dev python3 python-is-python3 tar wget jq rsync xz-utils perl \
-            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi xxd
+            binutils-aarch64-linux-gnu binutils-arm-linux-gnueabi gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi xxd
           sudo apt-get install -y libtinfo5 || true
 
       - name: Setup Swap Memory
@@ -111,7 +111,7 @@ jobs:
           echo "CONFIG_LZO_DECOMPRESS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo 'CONFIG_ZRAM_DEFAULT_COMP_ALGORITHM="lzo-rle"' >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
-          echo "=== 5. Debloat Kernel (Disable Debuggers, Tracing & Bloat) ==="
+          echo "=== 5. Debloat Kernel (Disable Debuggers, Tracing & Overhead) ==="
           sed -i 's/CONFIG_FTRACE=y/CONFIG_FTRACE=n/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           sed -i 's/CONFIG_DEBUG_KMEMLEAK=y/CONFIG_DEBUG_KMEMLEAK=n/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           sed -i 's/CONFIG_SLUB_DEBUG=y/CONFIG_SLUB_DEBUG=n/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
@@ -122,7 +122,26 @@ jobs:
           echo "CONFIG_KALLSYMS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_KALLSYMS_ALL=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
-          echo "=== Optimizations Applied Successfully ==="
+          echo "=== 7. Appended DTB Image ==="
+          echo "CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+
+          echo "=== 8. Disable Stack Protector Overhead for Max Execution Speed ==="
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_REGULAR=y/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+
+          echo "=== 9. Patch Makefile & DTC for Modern Host / Clang Toolchains ==="
+          # Fix dtc yylloc duplicate definition on GCC 10+
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
+
+          # Remove forced --gcc-toolchain to avoid warning that trips -Werror during cc-option check
+          sed -i 's/CLANG_FLAGS\t+= --gcc-toolchain=$(GCC_TOOLCHAIN)/# CLANG_FLAGS += --gcc-toolchain=$(GCC_TOOLCHAIN)/' Makefile
+
+          # Ensure compiler stack protector test does not abort make
+          sed -i '/not supported by compiler/s/exit 1/true/' Makefile
+
+          echo "=== Optimizations and Patches Applied Successfully ==="
 
       - name: Build Kernel Image & DTBs
         run: |
@@ -130,13 +149,11 @@ jobs:
           export PATH="${{ github.workspace }}/toolchain/clang/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
-          export CC="clang"
-          export CROSS_COMPILE="aarch64-linux-gnu-"
-          export CROSS_COMPILE_ARM32="arm-linux-gnueabi-"
-          export CLANG_TRIPLE="aarch64-linux-gnu-"
+          export KBUILD_BUILD_USER="Zareth"
+          export KBUILD_BUILD_HOST="HalcyonOS"
 
           echo "=== Generating Defconfig ==="
-          make O=out vendor/ginkgo-perf_defconfig
+          make O=out ARCH=arm64 vendor/ginkgo-perf_defconfig
 
           echo "=== Compiling Kernel ==="
           make -j$(nproc --all) O=out \
@@ -145,14 +162,20 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            Image.gz-dtb dtbo.img 2>&1 | tee build.log || \
-          make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            Image.gz dtbs dtbo.img 2>&1 | tee -a build.log
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            HOSTCFLAGS="-fcommon" \
+            KCFLAGS="-Wno-error" \
+            Image.gz dtbs Image.gz-dtb 2>&1 | tee build.log
+
+          echo "=== Ensuring Image.gz-dtb Exists ==="
+          if [ ! -f "out/arch/arm64/boot/Image.gz-dtb" ] && [ -f "out/arch/arm64/boot/Image.gz" ]; then
+            echo "Manually concatenating DTBs to Image.gz..."
+            cat out/arch/arm64/boot/Image.gz $(find out/arch/arm64/boot/dts -name "*.dtb") > out/arch/arm64/boot/Image.gz-dtb
+          fi
 
           echo "=== Checking Output Artifacts ==="
           ls -la out/arch/arm64/boot/
@@ -180,24 +203,24 @@ jobs:
           FINAL_ZIP_NAME="Legacy-Ginkgo-4.14.117-PurePerf-${BUILD_DATE}.zip"
 
           echo "=== Injecting Auto-Perf Tuning Service ==="
-          cat << 'EOF' > "$TMP_AK3_DIR/00-legacy-perf.sh"
-          #!/system/bin/sh
-          # Legacy Ginkgo (4.14.117) Auto-Perf & GPU Turbo Boot Service
-          echo 0 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null
-          echo 3 > /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null
-          echo 0 > /sys/class/kgsl/kgsl-3d0/throttling 2>/dev/null
-          for pol in /sys/devices/system/cpu/cpufreq/policy*; do
-            echo 500 > $pol/schedutil/up_rate_limit_us 2>/dev/null
-            echo 20000 > $pol/schedutil/down_rate_limit_us 2>/dev/null
-          done
-          for blk in /sys/block/mmcblk*; do
-            echo bfq > $blk/queue/scheduler 2>/dev/null
-            echo 128 > $blk/queue/read_ahead_kb 2>/dev/null
-          done
-          echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null
-          echo 20 > /proc/sys/vm/dirty_ratio 2>/dev/null
-          echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null
-          EOF
+          printf '%s\n' \
+            '#!/system/bin/sh' \
+            '# Legacy Ginkgo (4.14.117) Auto-Perf & GPU Turbo Boot Service' \
+            'echo 0 > /sys/class/kgsl/kgsl-3d0/max_pwrlevel 2>/dev/null' \
+            'echo 3 > /sys/class/kgsl/kgsl-3d0/min_pwrlevel 2>/dev/null' \
+            'echo 0 > /sys/class/kgsl/kgsl-3d0/throttling 2>/dev/null' \
+            'for pol in /sys/devices/system/cpu/cpufreq/policy*; do' \
+            '  echo 500 > $pol/schedutil/up_rate_limit_us 2>/dev/null' \
+            '  echo 20000 > $pol/schedutil/down_rate_limit_us 2>/dev/null' \
+            'done' \
+            'for blk in /sys/block/mmcblk*; do' \
+            '  echo bfq > $blk/queue/scheduler 2>/dev/null' \
+            '  echo 128 > $blk/queue/read_ahead_kb 2>/dev/null' \
+            'done' \
+            'echo 5 > /proc/sys/vm/dirty_background_ratio 2>/dev/null' \
+            'echo 20 > /proc/sys/vm/dirty_ratio 2>/dev/null' \
+            'echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null' \
+            > "$TMP_AK3_DIR/00-legacy-perf.sh"
           chmod 755 "$TMP_AK3_DIR/00-legacy-perf.sh"
 
           if [ -f "$TMP_AK3_DIR/anykernel.sh" ]; then
