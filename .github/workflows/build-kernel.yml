@@ -134,7 +134,7 @@ jobs:
           sed -i 's/CONFIG_CC_STACKPROTECTOR_REGULAR=y/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
-          echo "=== 9. Disable MODVERSIONS (Fix Linker Dangerous Relocation & Allow Custom Modules) ==="
+          echo "=== 9. Disable MODVERSIONS (Fix Linker Relocation & Allow Custom Modules) ==="
           sed -i 's/CONFIG_MODVERSIONS=y/# CONFIG_MODVERSIONS is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_MODVERSIONS=n" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
@@ -155,6 +155,17 @@ jobs:
           # Fix VDSO macro syntax
           sed -i 's/clock_gettime_return, shift=1/clock_gettime_return shift=1/g' arch/arm64/kernel/vdso/gettimeofday.S
           sed -i 's/\.macro clock_gettime_return, shift=0/\.macro clock_gettime_return shift=0/g' arch/arm64/kernel/vdso/gettimeofday.S
+
+          echo "=== 11. Move RTIC_BSS into main .bss in vmlinux.lds.S to prevent relocation overflow ==="
+          python3 -c '
+          with open("arch/arm64/kernel/vmlinux.lds.S", "r") as f:
+              text = f.read()
+          text = text.replace("\tBSS_SECTION(0, 0, 0)", "\t__bss_start = .;\n\tSBSS(0)\n\t.bss : AT(ADDR(.bss) - LOAD_OFFSET) {\n\t\tRTIC_BSS\n\t\t*(.bss..page_aligned)\n\t\t*(.dynbss)\n\t\t*(BSS_MAIN)\n\t\t*(COMMON)\n\t}\n\t__bss_stop = .;")
+          text = text.replace("\t.bss : {\t\t\t/* bss segment\t\t*/\n         RTIC_BSS\n\t}", "")
+          with open("arch/arm64/kernel/vmlinux.lds.S", "w") as f:
+              f.write(text)
+          print("[OK] vmlinux.lds.S patched successfully")
+          '
 
           echo "=== Optimizations and Patches Applied Successfully ==="
 
