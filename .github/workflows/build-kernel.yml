@@ -195,7 +195,7 @@ jobs:
         id: package
         run: |
           echo "=== Setting up AnyKernel3 ==="
-          git clone --depth=1 https://github.com/FlopKernel-Series/AnyKernel3 -b trinket AnyKernel3
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
           
           TMP_AK3_DIR="${{ github.workspace }}/AnyKernel3"
           mkdir -p "${{ github.workspace }}/output"
@@ -234,12 +234,16 @@ jobs:
             > "$TMP_AK3_DIR/00-legacy-perf.sh"
           chmod 755 "$TMP_AK3_DIR/00-legacy-perf.sh"
 
-          if [ -f "$TMP_AK3_DIR/anykernel.sh" ]; then
-            sed -i 's/kernel.string=.*/kernel.string=Legacy Ginkgo Kernel 4.14.117 by Zareth/' "$TMP_AK3_DIR/anykernel.sh"
-            sed -i '/write_boot;/a if [ -d /data/adb/service.d ]; then ui_print "  • Installing Legacy Auto-Perf service..."; cp -f $home/00-legacy-perf.sh /data/adb/service.d/00-legacy-perf.sh; chmod 755 /data/adb/service.d/00-legacy-perf.sh; fi' "$TMP_AK3_DIR/anykernel.sh"
-          fi
+          # Configure anykernel.sh for Ginkgo / Willow
+          sed -i 's/kernel.string=.*/kernel.string=Legacy Ginkgo Kernel 4.14.117 by Zareth/' "$TMP_AK3_DIR/anykernel.sh"
+          sed -i 's/device.name1=.*/device.name1=ginkgo/' "$TMP_AK3_DIR/anykernel.sh"
+          sed -i 's/device.name2=.*/device.name2=willow/' "$TMP_AK3_DIR/anykernel.sh"
+          sed -i 's/BLOCK=.*/BLOCK=boot;/' "$TMP_AK3_DIR/anykernel.sh"
+          sed -i 's/IS_SLOT_DEVICE=0;/IS_SLOT_DEVICE=auto;/' "$TMP_AK3_DIR/anykernel.sh"
+          sed -i '/write_boot;/a if [ -f $home/dtbo.img ]; then flash_dtbo; fi\nif [ -d /data/adb/service.d ]; then ui_print "  • Installing Legacy Auto-Perf service..."; cp -f $home/00-legacy-perf.sh /data/adb/service.d/00-legacy-perf.sh; chmod 755 /data/adb/service.d/00-legacy-perf.sh; fi' "$TMP_AK3_DIR/anykernel.sh"
 
           cd "$TMP_AK3_DIR"
+          rm -rf .git
           zip -r -q "${{ github.workspace }}/output/$FINAL_ZIP_NAME" .
           cd "${{ github.workspace }}"
 
