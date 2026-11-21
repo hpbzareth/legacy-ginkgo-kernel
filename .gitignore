@@ -1,0 +1,8 @@
+# Build output
+output/
+kernel/
+toolchain/
+AnyKernel3/
+*.zip
+*.img
+*.log
