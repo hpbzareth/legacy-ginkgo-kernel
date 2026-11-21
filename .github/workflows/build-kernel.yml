@@ -155,6 +155,10 @@ jobs:
             sed -i 's|cmd_vdsoas = $(CC) $(a_flags) -c|cmd_vdsoas = $(CC) $(a_flags) -fintegrated-as -c|' arch/arm64/kernel/vdso32/Makefile
           fi
 
+          # Fix LLVM integrated assembler macro comma syntax in VDSO gettimeofday.S
+          sed -i 's/clock_gettime_return, shift=1/clock_gettime_return shift=1/g' arch/arm64/kernel/vdso/gettimeofday.S
+          sed -i 's/\.macro clock_gettime_return, shift=0/\.macro clock_gettime_return shift=0/g' arch/arm64/kernel/vdso/gettimeofday.S
+
           echo "=== Optimizations and Patches Applied Successfully ==="
 
       - name: Build Kernel Image & DTBs
