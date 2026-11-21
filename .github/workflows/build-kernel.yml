@@ -19,7 +19,7 @@ on:
           - "aosp-clang"
         default: "proton-clang"
       release_tag:
-        description: "GitHub Release Tag (e.g. v1.0-Release)"
+        description: "GitHub Release Tag"
         required: false
         type: string
         default: "v1.0-4.14.117-Legacy"
@@ -33,8 +33,6 @@ on:
       - main
     paths:
       - ".github/workflows/**"
-      - "patches/**"
-      - "scripts/**"
 
 jobs:
   build:
@@ -80,12 +78,13 @@ jobs:
       - name: Setup Toolchain
         run: |
           mkdir -p toolchain
-          if [ "${{ inputs.clang_version || 'proton-clang' }}" = "proton-clang" ]; then
-            echo "=== Cloning Proton Clang 13 ==="
-            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain/clang
-          else
+          CLANG_CHOICE="${{ github.event.inputs.clang_version }}"
+          if [ "$CLANG_CHOICE" = "aosp-clang" ]; then
             echo "=== Cloning AOSP Clang ==="
             git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b.git toolchain/clang
+          else
+            echo "=== Cloning Proton Clang 13 ==="
+            git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain/clang
           fi
 
       - name: Apply Ultra-Optimizations on 4.14.117 Base
@@ -96,7 +95,6 @@ jobs:
           echo "CONFIG_LOCALVERSION_AUTO=n" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
           echo "=== 2. CPU Schedutil 500us & Timer 300Hz Frame-Perfect ==="
-          # Timer frequency 300Hz (60fps & 30fps smooth divider)
           sed -i 's/CONFIG_HZ_100=y/# CONFIG_HZ_100 is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           sed -i 's/CONFIG_HZ_250=y/# CONFIG_HZ_250 is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_HZ_300=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
@@ -107,7 +105,7 @@ jobs:
           echo "CONFIG_DEFAULT_BFQ=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo 'CONFIG_DEFAULT_IOSCHED="bfq"' >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
-          echo "=== 4. ZRAM Memory Compression (LZO-RLE / LZ4) ==="
+          echo "=== 4. ZRAM Memory Compression (LZO-RLE) ==="
           echo "CONFIG_CRYPTO_LZO=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_LZO_COMPRESS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_LZO_DECOMPRESS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
@@ -121,7 +119,6 @@ jobs:
           sed -i 's/CONFIG_DEBUG_KERNEL=y/CONFIG_DEBUG_KERNEL=n/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
           echo "=== 6. Pure FolkPatch / APatch Readiness ==="
-          # Standard symbols kept clean without inline hooks
           echo "CONFIG_KALLSYMS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_KALLSYMS_ALL=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
@@ -141,7 +138,7 @@ jobs:
           echo "=== Generating Defconfig ==="
           make O=out vendor/ginkgo-perf_defconfig
 
-          echo "=== Compiling Kernel (Image.gz & DTBs) ==="
+          echo "=== Compiling Kernel ==="
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
@@ -169,14 +166,12 @@ jobs:
           TMP_AK3_DIR="${{ github.workspace }}/AnyKernel3"
           mkdir -p "${{ github.workspace }}/output"
 
-          # Copy Image.gz-dtb or Image.gz
           if [ -f "kernel/out/arch/arm64/boot/Image.gz-dtb" ]; then
             cp -f kernel/out/arch/arm64/boot/Image.gz-dtb "$TMP_AK3_DIR/Image.gz-dtb"
           elif [ -f "kernel/out/arch/arm64/boot/Image.gz" ]; then
             cp -f kernel/out/arch/arm64/boot/Image.gz "$TMP_AK3_DIR/Image.gz"
           fi
 
-          # Copy DTBO if present
           if [ -f "kernel/out/arch/arm64/boot/dtbo.img" ]; then
             cp -f kernel/out/arch/arm64/boot/dtbo.img "$TMP_AK3_DIR/dtbo.img"
           fi
@@ -213,7 +208,6 @@ echo 100 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null
 EOF
           chmod 755 "$TMP_AK3_DIR/00-legacy-perf.sh"
 
-          # Inject AnyKernel3 branding
           if [ -f "$TMP_AK3_DIR/anykernel.sh" ]; then
             sed -i 's/kernel.string=.*/kernel.string=Legacy Ginkgo Kernel 4.14.117 by Zareth/' "$TMP_AK3_DIR/anykernel.sh"
             sed -i '/write_boot;/a if [ -d /data/adb/service.d ]; then ui_print "  • Installing Legacy Auto-Perf service..."; cp -f $home/00-legacy-perf.sh /data/adb/service.d/00-legacy-perf.sh; chmod 755 /data/adb/service.d/00-legacy-perf.sh; fi' "$TMP_AK3_DIR/anykernel.sh"
@@ -237,13 +231,16 @@ EOF
             ${{ github.workspace }}/kernel/out/.config
 
       - name: Publish to GitHub Release
-        if: ${{ inputs.make_release != false }}
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.make_release != 'false')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FINAL_ZIP: ${{ steps.package.outputs.final_zip }}
         run: |
           cd ${{ github.workspace }}/output
-          RELEASE_TAG="${{ inputs.release_tag || 'v1.0-4.14.117-Legacy' }}"
+          RELEASE_TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$RELEASE_TAG" ]; then
+            RELEASE_TAG="v1.0-4.14.117-Legacy"
+          fi
           echo "=== Publishing $FINAL_ZIP to Release: $RELEASE_TAG ==="
           if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" &>/dev/null; then
             echo "Creating new release: $RELEASE_TAG"
