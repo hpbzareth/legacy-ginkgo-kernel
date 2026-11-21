@@ -86,6 +86,8 @@ jobs:
             echo "=== Cloning Proton Clang 13 ==="
             git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain/clang
           fi
+          # Remove host x86 assembler binary inside toolchain to prevent accidental execution with arm64 flags
+          rm -f toolchain/clang/bin/as || true
 
       - name: Apply Ultra-Optimizations on 4.14.117 Base
         run: |
@@ -121,6 +123,8 @@ jobs:
           echo "=== 6. Pure FolkPatch / APatch Readiness ==="
           echo "CONFIG_KALLSYMS=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
           echo "CONFIG_KALLSYMS_ALL=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          sed -i 's/CONFIG_MODULE_SIG=y/CONFIG_MODULE_SIG=n/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
+          sed -i 's/CONFIG_MODULE_SIG_FORCE=y/# CONFIG_MODULE_SIG_FORCE is not set/' arch/arm64/configs/vendor/ginkgo-perf_defconfig
 
           echo "=== 7. Appended DTB Image ==="
           echo "CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE=y" >> arch/arm64/configs/vendor/ginkgo-perf_defconfig
@@ -135,11 +139,21 @@ jobs:
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
 
-          # Remove forced --gcc-toolchain to avoid warning that trips -Werror during cc-option check
-          sed -i 's/CLANG_FLAGS\t+= --gcc-toolchain=$(GCC_TOOLCHAIN)/# CLANG_FLAGS += --gcc-toolchain=$(GCC_TOOLCHAIN)/' Makefile
+          # Enable Clang integrated assembler and remove buggy prefix/gcc-toolchain auto-detection
+          sed -i 's/-no-integrated-as/-fintegrated-as/g' Makefile
+          sed -i 's/CLANG_FLAGS\t+= --gcc-toolchain=$(GCC_TOOLCHAIN)/# CLANG_FLAGS += --gcc-toolchain=$(GCC_TOOLCHAIN)/g' Makefile
+          sed -i 's/CLANG_FLAGS\t+= --prefix=$(GCC_TOOLCHAIN_DIR)/# CLANG_FLAGS += --prefix=$(GCC_TOOLCHAIN_DIR)/g' Makefile
 
           # Ensure compiler stack protector test does not abort make
           sed -i '/not supported by compiler/s/exit 1/true/' Makefile
+
+          # Patch VDSO Makefile to explicitly use Clang integrated assembler for assembly files (.S)
+          if [ -f arch/arm64/kernel/vdso/Makefile ]; then
+            sed -i 's|cmd_vdsoas = $(CC) $(a_flags) -c|cmd_vdsoas = $(CC) $(a_flags) -fintegrated-as -c|' arch/arm64/kernel/vdso/Makefile
+          fi
+          if [ -f arch/arm64/kernel/vdso32/Makefile ]; then
+            sed -i 's|cmd_vdsoas = $(CC) $(a_flags) -c|cmd_vdsoas = $(CC) $(a_flags) -fintegrated-as -c|' arch/arm64/kernel/vdso32/Makefile
+          fi
 
           echo "=== Optimizations and Patches Applied Successfully ==="
 
@@ -167,8 +181,9 @@ jobs:
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            HOSTCFLAGS="-fcommon" \
-            KCFLAGS="-Wno-error" \
+            HOSTCFLAGS="-fcommon -Wno-deprecated-declarations -Wno-error" \
+            KCFLAGS="-Wno-error -fintegrated-as" \
+            KAFLAGS="-fintegrated-as" \
             Image.gz dtbs Image.gz-dtb 2>&1 | tee build.log
 
           echo "=== Ensuring Image.gz-dtb Exists ==="
